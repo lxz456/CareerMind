@@ -75,15 +75,9 @@
 
     <!-- 步骤 3：结果 -->
     <div v-if="step === 3" class="step-body">
-      <el-card class="result-summary">
-        <template #header>
-          <div class="summary-header">
-            <span>分析报告</span>
-            <el-button size="small" @click="reset">重新规划</el-button>
-          </div>
-        </template>
-        <pre class="summary-text">{{ result?.summary }}</pre>
-      </el-card>
+      <div class="result-actions">
+        <el-button size="small" @click="reset">重新规划</el-button>
+      </div>
 
       <el-collapse v-model="activePanels" class="result-collapse">
         <!-- 简历分析 -->
@@ -362,20 +356,10 @@ onBeforeUnmount(() => clearTimeout(timer))
   color: #909399;
   margin: 8px 0 16px;
 }
-.result-summary {
-  margin-bottom: 16px;
-}
-.summary-header {
+.result-actions {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.summary-text {
-  white-space: pre-wrap;
-  font-family: inherit;
-  font-size: 14px;
-  line-height: 1.7;
-  color: #303133;
+  justify-content: flex-end;
+  margin-bottom: 12px;
 }
 .result-collapse {
   margin-bottom: 32px;
