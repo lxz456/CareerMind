@@ -282,7 +282,8 @@ VITE_API_BASE_URL=http://localhost:8010/api/v1
 2. 使用 `career_planning:<run_id>` 作为 LangGraph `thread_id`；
 3. 使用后台 `asyncio.Task` 执行图，并把节点进度写回业务库；
 4. 后端重启后，遗留的 `running` 记录改为 `interrupted`，不会自动恢复；
-5. 用户点击“继续”后调用恢复接口，有 checkpoint 则断点续跑，否则尝试使用原始简历重启。
+5. 普通“规划提升”入口始终展示新建页面；
+6. 用户只能从个人中心点击“继续”触发恢复接口，有 checkpoint 则断点续跑，否则尝试使用原始简历重启。
 
 ### 路径 B
 

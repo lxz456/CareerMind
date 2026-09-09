@@ -135,7 +135,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { uploadResume } from '../api/resume'
@@ -143,7 +143,6 @@ import {
   startCareerPlanning,
   getWorkflowStatus,
   getWorkflowResult,
-  listPlanHistory,
 } from '../api/workflow'
 import SkillGapChart from '../components/SkillGapChart.vue'
 import PlanTimeline from '../components/PlanTimeline.vue'
@@ -163,10 +162,6 @@ const interrupted = ref(false)
 const progress = ref(0)
 const result = ref(null)
 const activePanels = ref(['resume', 'jobs', 'gap', 'plan'])
-
-// 按用户保存当前规划任务，避免同一浏览器切换账号时串用 run_id。
-const currentUser = JSON.parse(localStorage.getItem('careermind_user') || 'null')
-const ACTIVE_RUN_KEY = `career_planning_active_run_${currentUser?.id || 'anonymous'}`
 
 const STEP_LABELS = {
   parallel_analysis: '正在并行分析简历与搜索岗位',
@@ -222,7 +217,6 @@ async function startAnalysis() {
       target_location: targetLocation.value || null,
     })
     runId.value = wf.run_id
-    localStorage.setItem(ACTIVE_RUN_KEY, runId.value)
     step.value = 2
     pollStatus()
   } catch (e) {
@@ -267,38 +261,37 @@ async function applyWorkflowStatus(status) {
 
 async function pollStatus() {
   if (!runId.value) return
+  const polledRunId = runId.value
   clearTimeout(timer)
   try {
-    const status = await getWorkflowStatus(runId.value)
+    const status = await getWorkflowStatus(polledRunId)
+    // 页面已切换到新建状态或另一个任务时，丢弃旧请求的迟到响应。
+    if (runId.value !== polledRunId) return
     if (await applyWorkflowStatus(status)) {
       timer = setTimeout(pollStatus, 2000)
     }
   } catch (e) {
-    failed.value = true
+    if (runId.value === polledRunId) failed.value = true
   }
 }
 
-async function restorePlanning() {
+async function restoreRequestedPlanning() {
+  clearTimeout(timer)
+  const requestedRunId = typeof route.query.run_id === 'string'
+    ? route.query.run_id
+    : ''
+
+  // 普通 /planning 始终是新建页面。只有个人中心携带 run_id 时才查看已有任务。
+  if (!requestedRunId) {
+    resetState()
+    return
+  }
+
   try {
-    const history = await listPlanHistory()
-    const plans = history.plans || []
-    const savedRunId = localStorage.getItem(ACTIVE_RUN_KEY)
-    const requestedRunId = typeof route.query.run_id === 'string'
-      ? route.query.run_id
-      : ''
-
-    // 历史列表明确选择的任务优先，其次才是本机任务和最新运行中任务。
-    const plan = plans.find((item) => item.run_id === requestedRunId)
-      || plans.find((item) => item.run_id === savedRunId && item.status !== 'interrupted')
-      || plans.find((item) => item.status === 'running')
-    if (!plan) {
-      if (savedRunId) localStorage.removeItem(ACTIVE_RUN_KEY)
-      return
-    }
-
-    runId.value = plan.run_id
-    localStorage.setItem(ACTIVE_RUN_KEY, runId.value)
+    resetState()
+    runId.value = requestedRunId
     const status = await getWorkflowStatus(runId.value)
+    if (route.query.run_id !== requestedRunId || runId.value !== requestedRunId) return
     if (await applyWorkflowStatus(status)) {
       timer = setTimeout(pollStatus, 2000)
     }
@@ -307,7 +300,7 @@ async function restorePlanning() {
   }
 }
 
-function reset() {
+function resetState() {
   step.value = 1
   runId.value = ''
   result.value = null
@@ -320,11 +313,20 @@ function reset() {
   jobRequirements.value = ''
   targetLocation.value = ''
   currentStepName.value = ''
-  localStorage.removeItem(ACTIVE_RUN_KEY)
   clearTimeout(timer)
 }
 
-onMounted(restorePlanning)
+function reset() {
+  resetState()
+  if (route.query.run_id) {
+    router.replace({ path: '/planning' })
+  }
+}
+
+// 同一 Planning 组件内从 ?run_id=... 切回侧边栏 /planning 时不会重新挂载，
+// 因此监听 query 变化，确保普通入口立即回到初始页面。
+watch(() => route.query.run_id, restoreRequestedPlanning)
+onMounted(restoreRequestedPlanning)
 onBeforeUnmount(() => clearTimeout(timer))
 </script>
 
