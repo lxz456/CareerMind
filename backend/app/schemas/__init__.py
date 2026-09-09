@@ -1,0 +1,1 @@
+# CareerMind AI Schemas

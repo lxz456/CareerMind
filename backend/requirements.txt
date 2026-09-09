@@ -1,0 +1,42 @@
+# CareerMind AI 后端依赖（按实际 import 精确匹配）
+# 由 app/ 全量 import 扫描 + 运行验证得出，移除无用项
+
+# Web Framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+python-multipart>=0.0.19        # FastAPI 上传文件（resume upload）
+
+# Database
+sqlalchemy>=2.0.35
+aiosqlite>=0.20.0               # SQLite 异步 driver（DATABASE_URL=sqlite+aiosqlite）
+
+# Auth (JWT)
+python-jose[cryptography]>=3.3.0
+# 密码哈希用标准库 hashlib（app/utils/security.py），无需 passlib/bcrypt
+
+# LangChain / LangGraph (1.x)
+langchain-openai>=1.0.0
+langchain-core>=1.0.0
+langgraph>=1.0.0
+langgraph-checkpoint>=4.0.0
+langgraph-checkpoint-sqlite>=3.0.0  # 持久化 LangGraph 短期记忆
+
+# File Parsing
+python-docx>=1.1.0
+PyPDF2>=3.0.0                  # PDF 文本提取回退
+pymupdf>=1.25.0                # PDF 文本提取主实现（fitz）
+
+# Vector Store (RAG)
+chromadb>=0.5.0                # ChromaDB 持久化向量库
+torch>=2.2.0                   # 本地 BGE Reranker 推理
+transformers>=4.44.2,<6.0.0   # 加载 BAAI/bge-reranker-v2-m3
+
+# LLM
+openai>=1.58.0                 # 千问/OpenAI 兼容客户端（embedding + chat）
+# tiktoken 无引用，已移除
+
+# Utils
+pydantic>=2.10.0
+pydantic-settings>=2.7.0
+python-dotenv>=1.0.0
+httpx>=0.28.0                  # RAG 采集调用 JSearch/Tavily
