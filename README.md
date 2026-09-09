@@ -4,7 +4,7 @@
 
 CareerMind AI 面向求职者提供简历分析、真实岗位检索、技能差距评估、职业学习规划、自适应模拟面试以及题库/学习资源检索。项目采用前后端分离架构，后端通过两个持久化 LangGraph 工作流组织 LLM 应用能力。
 
-> 当前定位：单机 Demo / 学习与求职展示项目。项目已经具备完整的 LLM 应用工程链路，但不是能够自由规划并自主选择任意工具的通用 ReAct Agent。
+> 当前定位：单机 Demo。项目已经具备完整的 LLM 应用工程链路，但不是能够自由规划并自主选择任意工具的通用 ReAct Agent。
 
 ## 核心功能
 
@@ -226,8 +226,6 @@ BGE_RERANK_DEVICE=auto
 ```
 
 说明：
-
-- `.env` 已被 `.gitignore` 排除，禁止提交真实密钥；
 - 路径 A 的真实岗位搜索需要 JSearch；
 - 学习资料实时采集需要 Tavily；
 - BGE 模型首次使用时会从 Hugging Face 下载到配置目录，后续复用本地文件；
@@ -240,8 +238,6 @@ cd backend
 .\venv\Scripts\Activate.ps1
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8010
 ```
-
-开发阶段可以追加 `--reload`，但代码变化会重启进程并中断正在运行的路径 A。重启后任务会显示为 `interrupted`，需要用户从个人中心点击“继续”。
 
 后端地址：
 
@@ -277,8 +273,6 @@ VITE_API_BASE_URL=http://localhost:8010/api/v1
 | ChromaDB | `backend/chroma_db/` | 面试题与学习资源的向量数据 |
 | 上传文件 | `backend/uploads/` | 用户上传的 PDF/DOCX 简历 |
 | BGE 模型 | `backend/venv/models/` | 本地精排模型文件 |
-
-这些运行数据、密钥、虚拟环境和模型文件均不会提交到 Git。删除业务数据库不会自动删除 ChromaDB，反之亦然；需要清理知识数据时应同时考虑两类存储。
 
 ## 状态恢复机制
 
@@ -316,8 +310,6 @@ VITE_API_BASE_URL=http://localhost:8010/api/v1
 | GET | `/api/v1/interview/{session_id}/feedback` | 获取面试状态或报告 |
 | GET | `/api/v1/interview/sessions` | 查询面试历史 |
 | POST | `/api/v1/knowledge/search` | 混合检索题目或学习资料 |
-
-完整接口契约请启动后端后访问 Swagger。
 
 ## 错误处理与可观测性
 
@@ -357,36 +349,10 @@ cd backend
 ## 已知限制
 
 - 当前是 SQLite + ChromaDB 的单机 Demo，不适合多进程、高并发生产部署；
-- `create_all()` 不是完整数据库迁移方案，正式项目应引入 Alembic；
 - 当前 JSearch 市场和前端筛选不包含中国大陆 `cn`；
 - SSE 输出的是工作流阶段更新，不是模型 token 级输出；
 - BGE 首次下载和首次加载耗时较长，4GB 显存设备可能需要使用较小 batch 或 CPU；
 - 密码哈希为 Demo 实现，生产环境应迁移到 Argon2id、scrypt 或 bcrypt；
 - 当前工具由确定性工作流调用，不是让 LLM 自主循环选择工具的通用 Agent Harness。
 
-## 开发文档
-
-更详细的状态字段、节点职责、混合检索、双写去重、错误处理、配置项和数据模型说明，请阅读 [backend/DEVELOPMENT.md](backend/DEVELOPMENT.md)。
-
-## Git 安全提醒
-
-提交前请确认以下内容没有进入暂存区：
-
-```text
-backend/.env
-frontend/.env.development
-backend/data/
-backend/chroma_db/
-backend/uploads/
-backend/venv/
-frontend/node_modules/
-frontend/dist/
-```
-
-推荐检查：
-
-```powershell
-git status
-git diff --cached --stat
-git diff --cached --check
 ```
