@@ -64,18 +64,21 @@ START
 
 ```text
 用户查询
-  ├─ SQLite FTS5 BM25 Top 50
-  └─ Chroma 向量检索 Top 50
-                │
-          按业务 ID 合并去重
-                │
-           RRF 排名融合
-                │
-          保留候选 Top 50
-                │
-    BAAI/bge-reranker-v2-m3
-                │
-          最终返回 Top 20
+→ 规范化
+→ Jieba 分词、停用词过滤
+→ FTS5/BM25 + LIKE 短词补充
+                 │
+原始查询 → Chroma 向量召回
+                 │
+          按 ID 合并去重
+                 ↓
+             RRF 融合
+                 ↓
+          候选集 Top 50
+                 ↓
+           BGE Rerank
+                 ↓
+            最终 Top 20
 ```
 
 ## 技术栈

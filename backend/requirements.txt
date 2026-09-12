@@ -40,3 +40,4 @@ pydantic>=2.10.0
 pydantic-settings>=2.7.0
 python-dotenv>=1.0.0
 httpx>=0.28.0                  # RAG 采集调用 JSearch/Tavily
+jieba>=0.42.1                  # 中文 BM25 查询分词
