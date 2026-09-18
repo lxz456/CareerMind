@@ -66,13 +66,10 @@ async def rank_jobs(
     user_skills: list[str],
     top_k: int,
     location_label: str = "",
-    job_requirements: str | None = None,
 ) -> dict:
     """使用 LLM 对工具层提供的真实岗位候选进行相关性排序。"""
     skills = ", ".join(user_skills) if user_skills else "Not specified"
     criteria = []
-    if job_requirements:
-        criteria.append(f"JOB REQUIREMENTS FILTER: {job_requirements}")
     if location_label:
         criteria.append(f"PREFERRED LOCATION: {location_label}")
 
@@ -104,22 +101,10 @@ async def rank_jobs(
         operation="job_rank",
     )
 
-    jobs = []
-    seen_indexes = set()
-    for ranked in result.get("jobs", []):
-        try:
-            index = int(ranked.get("candidate_index"))
-        except (TypeError, ValueError):
-            continue
-        if index < 0 or index >= len(candidates) or index in seen_indexes:
-            continue
-        seen_indexes.add(index)
-        metadata = candidates[index].get("metadata", {})
-        try:
-            score = min(max(float(ranked.get("score", 0)), 0.0), 1.0)
-        except (TypeError, ValueError):
-            score = 0.0
-        jobs.append({
+    def build_job(candidate: dict, score: float, reason: str) -> dict:
+        """把候选索引对应的真实字段组装成稳定岗位结构。"""
+        metadata = candidate.get("metadata", {})
+        return {
             "job_id": metadata.get("job_id", ""),
             "title": metadata.get("title", ""),
             "company": metadata.get("company", ""),
@@ -129,9 +114,62 @@ async def rank_jobs(
             "description": metadata.get("description", ""),
             "source_url": metadata.get("source_url", ""),
             "score": score,
-            "reason": str(ranked.get("reason", "")).strip(),
-        })
-        if len(jobs) >= top_k:
+            "reason": reason,
+        }
+
+    def job_key(candidate: dict) -> tuple[str, str, str]:
+        metadata = candidate.get("metadata", {})
+        return tuple(
+            str(metadata.get(field, "")).strip().casefold()
+            for field in ("title", "company", "location")
+        )
+
+    jobs = []
+    seen_indexes = set()
+    seen_jobs: set[tuple[str, str, str]] = set()
+    desired_count = min(max(top_k, 1), len(candidates))
+    for ranked in result.get("jobs", []):
+        try:
+            index = int(ranked.get("candidate_index"))
+        except (TypeError, ValueError):
+            continue
+        if index < 0 or index >= len(candidates) or index in seen_indexes:
+            continue
+        seen_indexes.add(index)
+        candidate = candidates[index]
+        key = job_key(candidate)
+        if not key[0] or key in seen_jobs:
+            continue
+        seen_jobs.add(key)
+        try:
+            score = min(max(float(ranked.get("score", 0)), 0.0), 1.0)
+        except (TypeError, ValueError):
+            score = 0.0
+        jobs.append(build_job(
+            candidate,
+            score,
+            str(ranked.get("reason", "")).strip(),
+        ))
+        if len(jobs) >= desired_count:
             break
+
+    # 模型偶尔少返回或返回无效 candidate_index。此时仅按 JSearch 原始顺序
+    # 补充未选中的真实岗位，避免真实候选充足却只向前端返回一条。
+    if len(jobs) < desired_count:
+        for index, candidate in enumerate(candidates):
+            if index in seen_indexes:
+                continue
+            key = job_key(candidate)
+            if not key[0] or key in seen_jobs:
+                continue
+            seen_indexes.add(index)
+            seen_jobs.add(key)
+            jobs.append(build_job(
+                candidate,
+                0.0,
+                "JSearch 真实岗位补充结果，模型未返回该候选的相关性评分。",
+            ))
+            if len(jobs) >= desired_count:
+                break
 
     return {"jobs": jobs}

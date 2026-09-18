@@ -1,7 +1,6 @@
 # CareerMind AI Skill Gap Analysis
 #
-# 单一入口：agents/skill_gap_agent.py 和 api/skill_gap.py 都调用 analyze_skill_gap()，
-# 提示词只维护这一份。
+# 路径 A 的 skill_gap 节点通过 analyze_skill_gap() 调用此处唯一一份提示词。
 from app.llm.llm_client import llm_json_call
 
 SKILL_GAP_SYSTEM_PROMPT = """你是资深技能分析专家。将用户当前技能与多个真实岗位的综合要求对比，识别共同能力差距。

@@ -27,15 +27,12 @@
           <el-option label="困难" value="hard" />
         </el-select>
 
-        <el-checkbox v-model="refresh">
-          {{ type === 'interview' ? '生成新题' : '实时搜索（联网采集最新）' }}
-        </el-checkbox>
       </div>
     </el-card>
 
     <el-card v-if="searched" class="result-card">
       <template #header>
-        <span>搜索结果（{{ results.length }}）{{ fromCache ? ' · 来自缓存' : '' }}</span>
+        <span>搜索结果（{{ results.length }}）</span>
       </template>
 
       <el-empty v-if="!results.length && !loading" description="没有找到相关内容" />
@@ -85,11 +82,9 @@ const type = ref('interview')
 const query = ref('')
 const category = ref('')
 const difficulty = ref('')
-const refresh = ref(false)
 const loading = ref(false)
 const searched = ref(false)
 const results = ref([])
-const fromCache = ref(false)
 
 function onTypeChange() {
   results.value = []
@@ -109,11 +104,9 @@ async function doSearch() {
       query: query.value.trim(),
       category: category.value || null,
       difficulty: difficulty.value || null,
-      refresh: refresh.value,
       limit: 20,
     })
     results.value = res.results || []
-    fromCache.value = res.from_cache
   } catch (e) {
     results.value = []
   } finally {

@@ -1,7 +1,6 @@
 # CareerMind AI Career Plan Generation
 #
-# 单一入口：agents/career_planner_agent.py 和 api/career_plan.py 都调用 generate_career_plan()，
-# 提示词只维护这一份。
+# 路径 A 的 career_plan 节点通过 generate_career_plan() 调用此处唯一一份提示词。
 from app.llm.llm_client import llm_json_call
 
 CAREER_PLAN_SYSTEM_PROMPT = """你是资深职业教练和学习路径设计师。

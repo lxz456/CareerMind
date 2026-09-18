@@ -31,8 +31,8 @@
           <span>题库/学习中心</span>
         </el-menu-item>
         <el-menu-item index="/profile">
-          <el-icon><User /></el-icon>
-          <span>个人中心</span>
+          <el-icon><Clock /></el-icon>
+          <span>历史记录</span>
         </el-menu-item>
       </el-menu>
     </el-aside>
@@ -50,7 +50,7 @@
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="profile">个人中心</el-dropdown-item>
+                <el-dropdown-item command="profile">个人资料</el-dropdown-item>
                 <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -84,7 +84,7 @@ function handleCommand(command) {
     ElMessage.success('已退出登录')
     router.push('/login')
   } else if (command === 'profile') {
-    router.push('/profile')
+    router.push('/personal-profile')
   }
 }
 </script>

@@ -20,5 +20,5 @@ async def search_knowledge(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """搜索题库/学习资料；新题由 LLM 生成，学习资料由 Tavily 采集。"""
+    """在已有题库或学习资料库中执行混合检索与精排。"""
     return await KnowledgeService.search_knowledge(db, data)

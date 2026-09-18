@@ -87,9 +87,7 @@ async def run_career_planning_pipeline(
     user_id: str,
     resume_text: str,
     target_position: str = "",
-    resume_id: str = "",
     thread_id: Optional[str] = None,
-    job_requirements: str = "",
     target_location: str = "",
     resume_from_checkpoint: bool = False,
     on_step=None,
@@ -102,9 +100,8 @@ async def run_career_planning_pipeline(
         user_id: User ID
         resume_text: Full text extracted from the uploaded resume
         target_position: Required job title supplied by the user
-        resume_id: DB resume record ID for reference
         thread_id: Checkpoint thread ID. Same ID = resume from last saved state.
-        job_requirements / target_location: JSearch 工作要求与地点筛选
+        target_location: JSearch 求职地区筛选
 
     Returns:
         Final state with resume_data, job_results, skill_gap_data, career_plan_data
@@ -117,11 +114,8 @@ async def run_career_planning_pipeline(
     graph_input = None
     if not resume_from_checkpoint:
         graph_input = create_career_planning_state(
-            user_id=user_id,
-            resume_id=resume_id,
             resume_text=resume_text,
             target_position=target_position,
-            job_requirements=job_requirements,
             target_location=target_location,
         )
 

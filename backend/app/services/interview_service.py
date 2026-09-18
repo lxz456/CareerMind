@@ -114,7 +114,7 @@ def _session_response(state: dict, last_feedback: dict | None = None) -> Intervi
         total_questions=state.get("total_questions", 0),
         result=_result_response(state) if completed else None,
         last_feedback=_feedback_response(last_feedback),
-        answered_count=state.get("answered_count", 0),
+        answered_count=len(state.get("feedbacks") or []),
     )
 
 
@@ -255,7 +255,6 @@ class InterviewService:
         try:
             # Graph 内部完成状态初始化、第一题生成，并停在 wait_for_answer 中断点。
             state = await start_interview_graph(
-                user_id=user_id,
                 session_id=session_id,
                 interview_type=data.interview_type,
                 target_position=data.job_title,

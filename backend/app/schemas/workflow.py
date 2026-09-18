@@ -11,15 +11,6 @@ class CareerPlanningRequest(BaseModel):
     resume_id: Optional[str] = Field(None, description="已上传简历的 DB ID")
     resume_text: Optional[str] = Field(None, description="简历纯文本（如果没有 resume_id）")
     target_position: str = Field(..., min_length=1, max_length=100, description="必填目标岗位")
-    job_requirements: Optional[Literal[
-        "under_3_years_experience",
-        "more_than_3_years_experience",
-        "no_experience",
-        "no_degree",
-    ]] = Field(
-        None,
-        description="JSearch 工作要求筛选：under_3_years_experience | more_than_3_years_experience | no_experience | no_degree",
-    )
     target_location: Optional[Literal["us", "gb", "de", "jp", "sg", "hk", "tw"]] = Field(
         None,
         description="JSearch 求职国家/地区代码",
@@ -43,9 +34,9 @@ class CareerPlanningRequest(BaseModel):
 
 
 class WorkflowStatusResponse(BaseModel):
-    """Workflow run status (shared by both paths)."""
+    """路径 A 的职业规划任务状态。"""
     run_id: str
-    path: str                          # "career_planning" | "interview"
+    path: str                          # career_planning
     status: str                        # pending | running | interrupted | completed | failed
     current_step: Optional[str] = None # resume_analysis | job_search | skill_gap | career_plan | summary
     completed_steps: List[str] = Field(default_factory=list)
@@ -60,10 +51,10 @@ class CareerPlanningResultResponse(BaseModel):
     """Complete result of the career planning pipeline."""
     run_id: str
     status: str
-    resume_result: Optional[dict] = None       # Resume agent output
-    job_result: Optional[dict] = None          # Job agent output
-    skill_gap_result: Optional[dict] = None    # Skill gap agent output
-    career_plan_result: Optional[dict] = None  # Career planner output
+    resume_result: Optional[dict] = None       # Resume analysis node output
+    job_result: Optional[dict] = None          # Job search node output
+    skill_gap_result: Optional[dict] = None    # Skill gap node output
+    career_plan_result: Optional[dict] = None  # Career plan node output
     summary: Optional[str] = None              # Final aggregated summary
     completed_steps: List[str] = Field(default_factory=list)
 

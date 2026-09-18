@@ -17,7 +17,7 @@ CareerMind AI 面向求职者提供简历分析、真实岗位检索、技能差
 - 生成简体中文的月度职业发展计划；
 - 通过 Tavily 为规划任务补充真实学习资料；
 - 使用后台 `asyncio.Task` 执行长任务，前端轮询展示进度；
-- 后端重启后将未完成任务标记为 `interrupted`，由用户在个人中心手动继续。
+- 后端重启后将未完成任务标记为 `interrupted`，由用户在历史记录页手动继续。
 
 ```text
                     ┌─ resume_analysis ─┐
@@ -103,7 +103,7 @@ START
 ```text
 ┌────────────────────────────── Frontend ──────────────────────────────┐
 │ Vue 3 / Vite / Element Plus                                         │
-│ 规划提升 / 模拟面试 / 题库学习中心 / 个人中心                       │
+│ 规划提升 / 模拟面试 / 题库学习中心 / 历史记录 / 个人资料            │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │ HTTP JSON / multipart / SSE
 ┌───────────────────────────────▼──────────────────────────────────────┐
@@ -286,7 +286,8 @@ VITE_API_BASE_URL=http://localhost:8010/api/v1
 3. 使用后台 `asyncio.Task` 执行图，并把节点进度写回业务库；
 4. 后端重启后，遗留的 `running` 记录改为 `interrupted`，不会自动恢复；
 5. 普通“规划提升”入口始终展示新建页面；
-6. 用户只能从个人中心点击“继续”触发恢复接口，有 checkpoint 则断点续跑，否则尝试使用原始简历重启。
+6. 用户只能从历史记录页点击“继续”触发恢复接口，有 checkpoint 则断点续跑，否则尝试使用原始简历重启。
+7. 删除运行中的规划时，后端会先取消并等待对应后台任务，再清理业务记录和 checkpoint，避免删除后继续回写。
 
 ### 路径 B
 
@@ -309,10 +310,12 @@ VITE_API_BASE_URL=http://localhost:8010/api/v1
 | POST | `/api/v1/workflow/{run_id}/resume` | 显式恢复中断的规划 |
 | GET | `/api/v1/workflow/{run_id}/result` | 获取已完成规划结果 |
 | GET | `/api/v1/workflow/plans` | 查询规划历史 |
+| DELETE | `/api/v1/workflow/plans/{run_id}` | 安全停止并删除规划及 checkpoint |
 | POST | `/api/v1/interview/start` | 创建路径 B 面试 |
 | POST | `/api/v1/interview/{session_id}/answer` | SSE 提交回答并推进图 |
 | GET | `/api/v1/interview/{session_id}/feedback` | 获取面试状态或报告 |
 | GET | `/api/v1/interview/sessions` | 查询面试历史 |
+| DELETE | `/api/v1/interview/{session_id}` | 删除面试历史及 checkpoint |
 | POST | `/api/v1/knowledge/search` | 混合检索题目或学习资料 |
 
 ## 错误处理与可观测性
@@ -347,8 +350,6 @@ npm run build
 cd backend
 .\venv\Scripts\python.exe scripts/backfill_vector_knowledge.py
 ```
-
-当前仓库尚未配置自动化测试套件，涉及图路由、checkpoint 或双数据库一致性的改动，应至少手工执行一次路径 A、路径 B 和知识检索的端到端冒烟测试。
 
 ## 已知限制
 

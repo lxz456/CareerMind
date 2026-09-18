@@ -55,7 +55,7 @@ async def delete_career_plan(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """删除一条职业规划历史记录。"""
+    """停止仍在运行的后台任务，并删除职业规划历史和 checkpoint。"""
     await WorkflowService.delete_plan(db, user_id, run_id)
     return Response(status_code=204)
 

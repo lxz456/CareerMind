@@ -34,10 +34,6 @@ class KnowledgeSearchRequest(BaseModel):
     category: Optional[str] = Field(None, description="面试题分类 / 资源类型过滤")
     difficulty: Optional[Literal["easy", "medium", "hard"]] = Field(None, description="难度过滤（仅面试题）")
     limit: int = Field(default=10, ge=1, le=20)
-    refresh: bool = Field(
-        False,
-        description="True 时生成新面试题，或通过 Tavily 采集新学习资源并入库",
-    )
 
     model_config = {"extra": "forbid"}
 
@@ -53,4 +49,3 @@ class KnowledgeSearchRequest(BaseModel):
 class KnowledgeSearchResponse(BaseModel):
     type: str
     results: List[Union[QuestionItem, ResourceItem]] = Field(default_factory=list)
-    from_cache: bool = False

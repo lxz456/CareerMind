@@ -55,7 +55,7 @@ class WorkflowRepo:
         run_id: str,
         user_id: str,
     ) -> WorkflowRun | None:
-        """查 careary_planning 类型的工作流（用于删除历史记录）。"""
+        """按用户与 ID 查询 career_planning 工作流。"""
         result = await db.execute(
             select(WorkflowRun).where(
                 WorkflowRun.id == run_id,

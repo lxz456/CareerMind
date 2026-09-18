@@ -14,45 +14,11 @@ from app.schemas.knowledge import (
     QuestionItem,
     ResourceItem,
 )
-from app.services.knowledge_ingestion_service import (
-    KnowledgeIngestionResult,
-    KnowledgeIngestionService,
-)
-from app.tools.learning_resources import collect_learning_resource_cards
-
-
 logger = logging.getLogger(__name__)
 
 
 class KnowledgeService:
-    """知识刷新与检索的业务入口。"""
-
-    @staticmethod
-    async def _refresh(
-        db: AsyncSession, req: KnowledgeSearchRequest
-    ) -> KnowledgeIngestionResult:
-        """按请求类型生成/采集新内容并统一双写，返回处理数量。"""
-        if req.type == "interview":
-            from app.llm.interview_questions import generate_questions_by_llm
-
-            interview_type = {
-                "behavioral": "hr",
-                "system_design": "system_design",
-            }.get(req.category, "technical")
-            cards = await generate_questions_by_llm(
-                interview_type=interview_type,
-                target_position=req.query,
-                skills=[],
-                question_count=req.limit,
-            )
-            for card in cards:
-                if req.category:
-                    card["category"] = req.category
-                card["difficulty"] = req.difficulty or card.get("difficulty", "medium")
-            return await KnowledgeIngestionService.ingest_questions(db, cards)
-
-        cards = await collect_learning_resource_cards(req.query)
-        return await KnowledgeIngestionService.ingest_resources(db, cards)
+    """知识中心本地混合检索的业务入口。"""
 
     @staticmethod
     async def search_knowledge(
@@ -60,13 +26,6 @@ class KnowledgeService:
         req: KnowledgeSearchRequest,
     ) -> KnowledgeSearchResponse:
         """并行执行 BM25 与向量召回，经 RRF 融合、去重和 Rerank 返回 Top 20。"""
-        refreshed = False
-        if req.refresh:
-            try:
-                refreshed = bool(await KnowledgeService._refresh(db, req))
-            except Exception as exc:
-                logger.warning("Knowledge refresh failed; using cached data: %s", exc)
-
         settings = get_settings()
         candidate_limit = max(1, settings.HYBRID_CANDIDATE_LIMIT)
         bm25_task = KnowledgeService._bm25_recall(db, req, candidate_limit)
@@ -105,7 +64,6 @@ class KnowledgeService:
         return KnowledgeSearchResponse(
             type=req.type,
             results=ranked,
-            from_cache=not refreshed,
         )
 
     @staticmethod

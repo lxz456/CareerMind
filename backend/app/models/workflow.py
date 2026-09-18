@@ -12,13 +12,12 @@ class WorkflowRun(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
 
-    # Workflow type
-    workflow_type: Mapped[str] = mapped_column(String(50), default="full_pipeline")
-    # full_pipeline | resume_analysis | job_search | skill_gap | career_plan | interview
+    # 路径 B 使用 conversations；该表只保存路径 A 的 career_planning 任务。
+    workflow_type: Mapped[str] = mapped_column(String(50), default="career_planning")
 
     # Status
     status: Mapped[str] = mapped_column(String(20), default="pending")
-    # pending | running | interrupted | waiting_user | completed | failed
+    # pending | running | interrupted | completed | failed
 
     current_step: Mapped[str | None] = mapped_column(String(50), nullable=True)
     completed_steps: Mapped[list | None] = mapped_column(JSON, nullable=True)
@@ -26,7 +25,7 @@ class WorkflowRun(Base):
     # Input
     input_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
-    # Results from each agent
+    # Results from each LangGraph node
     resume_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     job_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     skill_gap_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)

@@ -4,6 +4,7 @@ This module owns market localization, HTTP transport, response validation, and
 normalization. Business workflows consume normalized candidate cards and do
 not depend on the provider's response shape.
 """
+import asyncio
 import logging
 import re
 import time
@@ -17,25 +18,25 @@ from app.utils.retry import retry_http_call
 
 JSEARCH_MARKETS = {
     "us": {
-        "query_location": "United States", "country": "us", "fallback_language": "en"
+        "query_location": "United States", "country": "us", "language": "en"
     },
     "gb": {
-        "query_location": "United Kingdom", "country": "gb", "fallback_language": "en"
+        "query_location": "United Kingdom", "country": "gb", "language": "en"
     },
     "de": {
-        "query_location": "Germany", "country": "de", "fallback_language": "de"
+        "query_location": "Germany", "country": "de", "language": "de"
     },
     "jp": {
-        "query_location": "Japan", "country": "jp", "fallback_language": "ja"
+        "query_location": "Japan", "country": "jp", "language": "ja"
     },
     "sg": {
-        "query_location": "Singapore", "country": "sg", "fallback_language": "en"
+        "query_location": "Singapore", "country": "sg", "language": "en"
     },
     "hk": {
-        "query_location": "Hong Kong", "country": "hk", "fallback_language": "en"
+        "query_location": "Hong Kong", "country": "hk", "language": "zh"
     },
     "tw": {
-        "query_location": "Taiwan", "country": "tw", "fallback_language": "zh"
+        "query_location": "Taiwan", "country": "tw", "language": "zh"
     },
 }
 logger = logging.getLogger(__name__)
@@ -127,10 +128,41 @@ def normalize_job(job: dict) -> dict:
     }
 
 
+def _deduplicate_candidate_cards(cards: list[dict], limit: int) -> list[dict]:
+    """按岗位 ID、来源链接和核心字段合并多语言检索结果。"""
+    unique = []
+    seen_ids: set[str] = set()
+    seen_urls: set[str] = set()
+    seen_fields: set[tuple[str, str, str]] = set()
+    for card in cards:
+        job_id = str(card.get("job_id", "")).strip()
+        source_url = str(card.get("source_url", "")).strip().casefold()
+        fields = tuple(
+            str(card.get(field, "")).strip().casefold()
+            for field in ("title", "company", "location")
+        )
+        if not fields[0]:
+            continue
+        if (
+            (job_id and job_id in seen_ids)
+            or (source_url and source_url in seen_urls)
+            or fields in seen_fields
+        ):
+            continue
+        if job_id:
+            seen_ids.add(job_id)
+        if source_url:
+            seen_urls.add(source_url)
+        seen_fields.add(fields)
+        unique.append(card)
+        if len(unique) >= max(limit, 1):
+            break
+    return unique
+
+
 async def fetch_job_candidates(
     target_position: str,
     market_code: str | None = None,
-    job_requirements: str | None = None,
 ) -> list[dict]:
     """Fetch and normalize real JSearch jobs for a position and market."""
     settings = get_settings()
@@ -145,16 +177,16 @@ async def fetch_job_candidates(
     if location:
         query = f"{query} in {location}"
 
-    params = {
+    base_params = {
         "query": query,
         "num_pages": 1,
-        # 只控制结果语言；检索关键词已单独转换为英文。
-        "language": "zh",
     }
     if market:
-        params["country"] = market["country"]
-    if job_requirements:
-        params["job_requirements"] = job_requirements
+        base_params["country"] = market["country"]
+
+    # 非英语市场同时召回当地语言和英文结果；英语市场只请求一次。
+    local_language = market["language"] if market else "en"
+    languages = list(dict.fromkeys((local_language, "en")))
 
     async with httpx.AsyncClient(
         timeout=settings.JSEARCH_TIMEOUT_SECONDS,
@@ -170,7 +202,8 @@ async def fetch_job_candidates(
             response.raise_for_status()
             jobs = (response.json().get("data") or {}).get("jobs", [])
             logger.info(
-                "JSearch call completed status_code=%d duration_ms=%d results=%d",
+                "JSearch call completed language=%s status_code=%d duration_ms=%d results=%d",
+                request_params["language"],
                 response.status_code,
                 round((time.perf_counter() - started) * 1000),
                 len(jobs),
@@ -185,15 +218,49 @@ async def fetch_job_candidates(
                 backoff_seconds=settings.EXTERNAL_API_RETRY_BACKOFF_SECONDS,
             )
 
-        raw_jobs = await request_with_retry(params)
-        # 中文结果在部分国际市场可能为空；此时只放宽结果语言，不改变职位和地区条件。
-        fallback_language = market.get("fallback_language", "en") if market else "en"
-        if not raw_jobs and fallback_language != params["language"]:
-            fallback_params = {**params, "language": fallback_language}
-            raw_jobs = await request_with_retry(fallback_params)
+        async def request_language(language: str) -> tuple[str, list[dict], Exception | None]:
+            try:
+                jobs = await request_with_retry({**base_params, "language": language})
+                return language, jobs, None
+            except Exception as exc:
+                # 单路失败不应丢弃另一语言已经成功取得的真实岗位。
+                return language, [], exc
 
-    raw_jobs = raw_jobs[: settings.JSEARCH_MAX_RESULTS]
-    cards = [normalize_job(job) for job in raw_jobs]
+        results = await asyncio.gather(*(request_language(language) for language in languages))
+
+    raw_jobs = []
+    errors: list[tuple[str, Exception]] = []
+    successful_languages = []
+    for language, jobs, error in results:
+        if error is not None:
+            errors.append((language, error))
+            logger.warning(
+                "JSearch language branch failed language=%s error_type=%s error=%s",
+                language,
+                type(error).__name__,
+                error,
+            )
+            continue
+        successful_languages.append(language)
+        raw_jobs.extend(jobs)
+
+    if not successful_languages:
+        # 所有语言分支都失败时保持原有语义：向上抛出外部服务异常。
+        raise errors[0][1]
+
+    cards = _deduplicate_candidate_cards(
+        [normalize_job(job) for job in raw_jobs],
+        settings.JSEARCH_MAX_RESULTS,
+    )
+    logger.info(
+        "JSearch candidates merged market=%s requested_languages=%s "
+        "successful_languages=%s raw_results=%d unique_results=%d",
+        code or "global",
+        ",".join(languages),
+        ",".join(successful_languages),
+        len(raw_jobs),
+        len(cards),
+    )
     return [
         {
             "metadata": {
@@ -240,7 +307,6 @@ async def search_jobs(
     target_position: str,
     user_skills: list[str] | None = None,
     location: str | None = None,
-    job_requirements: str | None = None,
     top_k: int = 5,
 ) -> dict:
     """实时获取真实岗位，再调用 LLM 排序并去重。
@@ -251,7 +317,6 @@ async def search_jobs(
     candidates = await fetch_job_candidates(
         target_position,
         market_code=location,
-        job_requirements=job_requirements,
     )
     if not candidates:
         return {"jobs": []}
@@ -261,7 +326,15 @@ async def search_jobs(
         target_position=target_position,
         user_skills=user_skills or [],
         location_label=market_name(location),
-        job_requirements=job_requirements,
         top_k=top_k,
     )
-    return {"jobs": _deduplicate_jobs(ranked.get("jobs", []), top_k)}
+    jobs = _deduplicate_jobs(ranked.get("jobs", []), top_k)
+    logger.info(
+        "Job search completed target=%s market=%s candidates=%d ranked=%d returned=%d",
+        target_position,
+        location or "global",
+        len(candidates),
+        len(ranked.get("jobs", [])),
+        len(jobs),
+    )
+    return {"jobs": jobs}

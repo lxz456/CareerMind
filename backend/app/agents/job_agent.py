@@ -22,7 +22,6 @@ async def job_search_node(state: CareerPlanningState) -> dict:
             # Resume analysis runs in parallel. Skill matching belongs to skill_gap.
             user_skills=[],
             location=state.get("target_location"),
-            job_requirements=state.get("job_requirements"),
             top_k=5,
         )
 

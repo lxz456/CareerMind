@@ -1,17 +1,9 @@
-# CareerMind AI Supervisor — Summary Node
-"""
-The supervisor acts as the final aggregation node in the career planning pipeline.
-After all four agents complete (resume → job → gap → plan),
-it stitches their outputs into a single readable summary.
-"""
+"""路径 A 的确定性汇总节点，不调用 LLM，也不负责自主调度其他节点。"""
 from app.agents.state import CareerPlanningState
 
 
 async def supervisor_summary_node(state: CareerPlanningState) -> dict:
-    """Generate a final summary from all agent outputs in the career planning pipeline.
-
-    Called as the last node in: resume → job → skill_gap → career_plan → summary
-    """
+    """汇总并行简历/岗位节点及后续差距、规划节点的已有结果。"""
     resume = state.get("resume_data") or {}
     jobs = state.get("job_results") or []
     gaps = state.get("skill_gap_data") or {}
@@ -21,7 +13,7 @@ async def supervisor_summary_node(state: CareerPlanningState) -> dict:
 
     # ---- Part 1: Resume Analysis ----
     if resume:
-        name = resume.get("name") or state.get("user_id", "Candidate")
+        name = resume.get("name") or "候选人"
         skills = resume.get("skills", [])
         summary_parts.append(f"## 简历分析\n- 姓名: {name}\n- 技能: {', '.join(skills[:15])}")
         if resume.get("overall_assessment"):
@@ -65,6 +57,5 @@ async def supervisor_summary_node(state: CareerPlanningState) -> dict:
 
     return {
         "final_summary": summary,
-        "current_step": "completed",
         "completed_steps": ["summary"],
     }

@@ -1,35 +1,8 @@
 <template>
   <div class="profile">
     <el-row :gutter="20">
-      <!-- 左侧：资料 -->
-      <el-col :span="10">
-        <el-card>
-          <template #header><b>个人资料</b></template>
-          <el-form label-width="80px">
-            <el-form-item label="用户名">{{ profile.username }}</el-form-item>
-            <el-form-item label="邮箱">{{ profile.email }}</el-form-item>
-            <el-form-item label="姓名">
-              <el-input v-model="form.full_name" placeholder="选填" />
-            </el-form-item>
-            <el-form-item label="简介">
-              <el-input v-model="form.bio" type="textarea" :rows="2" placeholder="选填" />
-            </el-form-item>
-            <el-form-item label="手机号">
-              <el-input v-model="form.phone" placeholder="选填" />
-            </el-form-item>
-            <el-form-item label="头像">
-              <el-input v-model="form.avatar_url" placeholder="选填，图片 URL" />
-            </el-form-item>
-            <el-form-item label="当前级别">
-              <el-input v-model="form.current_level" placeholder="选填，如：高级 / 资深" />
-            </el-form-item>
-            <el-button type="primary" :loading="saving" @click="saveProfile">保存资料</el-button>
-          </el-form>
-        </el-card>
-      </el-col>
-
-      <!-- 右侧：历史 -->
-      <el-col :span="14">
+      <!-- 左侧：面试历史 -->
+      <el-col :xs="24" :lg="12">
         <el-card class="history-card">
           <template #header><b>面试历史（{{ sessions.length }}）</b></template>
           <el-empty v-if="!sessions.length" description="还没有进行模拟面试" :image-size="60" />
@@ -62,7 +35,10 @@
             </el-table-column>
           </el-table>
         </el-card>
+      </el-col>
 
+      <!-- 右侧：职业规划历史 -->
+      <el-col :xs="24" :lg="12">
         <el-card class="history-card">
           <template #header><b>职业规划历史（{{ plans.length }}）</b></template>
           <el-empty v-if="!plans.length" description="还没有进行职业规划" :image-size="60" />
@@ -102,15 +78,14 @@
           <el-alert v-if="planDetail.status === 'failed'" type="error" :closable="false"
                     title="该次规划执行失败，无可用结果" show-icon />
           <template v-else>
-            <h4 class="pd-title">汇总报告</h4>
-            <p class="pd-summary">{{ planDetail.summary || '暂无汇总' }}</p>
-
             <template v-if="planDetail.resume_result">
               <h4 class="pd-title">简历分析</h4>
               <div class="pd-text">
                 <p>姓名：{{ planDetail.resume_result.name || '-' }}</p>
                 <p>目标岗位：{{ planDetail.career_plan_result?.target_position || '-' }}</p>
-                <p v-if="planDetail.resume_result.summary">评估：{{ planDetail.resume_result.summary }}</p>
+                <p v-if="planDetail.resume_result.overall_assessment">
+                  评估：{{ planDetail.resume_result.overall_assessment }}
+                </p>
               </div>
             </template>
 
@@ -140,8 +115,11 @@
               <h4 class="pd-title">学习规划</h4>
               <p class="pd-summary">{{ planDetail.career_plan_result.overview }}</p>
               <ul class="pd-list">
-                <li v-for="(m, i) in (planDetail.career_plan_result.milestones || [])" :key="i">
-                  <b>{{ m.period }}</b> — {{ m.objective }}
+                <li
+                  v-for="(milestone, i) in (planDetail.career_plan_result.key_milestones || planDetail.career_plan_result.milestones || [])"
+                  :key="i"
+                >
+                  {{ formatMilestone(milestone) }}
                 </li>
               </ul>
             </template>
@@ -159,44 +137,20 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getProfile, updateProfile } from '../api/user'
 import { listSessions, deleteSession } from '../api/interview'
 import { listPlanHistory, getWorkflowResult, resumeCareerPlanning, deletePlan } from '../api/workflow'
 
 const router = useRouter()
-const profile = ref({})
-const form = ref({ full_name: '', bio: '', phone: '', avatar_url: '', current_level: '' })
 const sessions = ref([])
 const plans = ref([])
-const saving = ref(false)
 const planDialog = ref(false)
 const planLoading = ref(false)
 const planDetail = ref(null)
 
 onMounted(async () => {
-  try {
-    const p = await getProfile()
-    profile.value = p
-    form.value = {
-      full_name: p.full_name || '',
-      bio: p.bio || '',
-      phone: p.phone || '',
-      avatar_url: p.avatar_url || '',
-      current_level: p.current_level || '',
-    }
-  } catch (e) {}
   try { sessions.value = (await listSessions()).sessions || [] } catch (e) {}
   try { plans.value = (await listPlanHistory()).plans || [] } catch (e) {}
 })
-
-async function saveProfile() {
-  saving.value = true
-  try {
-    await updateProfile(form.value)
-    ElMessage.success('资料已保存')
-  } catch (e) {}
-  finally { saving.value = false }
-}
 
 function goSession(row) {
   if (row.status === 'unavailable') {
@@ -220,6 +174,13 @@ const sessionStatusType = (status) => ({
 }[status] || 'info')
 
 const isPlanContinuable = (status) => ['pending', 'running', 'interrupted'].includes(status)
+
+// 新版规划使用字符串形式的 key_milestones；对象分支兼容已有旧记录。
+const formatMilestone = (milestone) => {
+  if (typeof milestone === 'string') return milestone
+  if (!milestone || typeof milestone !== 'object') return ''
+  return [milestone.period, milestone.objective].filter(Boolean).join(' — ')
+}
 
 const planStatusLabel = (status) => ({
   pending: '等待中',
@@ -293,10 +254,10 @@ async function removePlan(row) {
 
 <style scoped>
 .profile {
-  max-width: 1000px;
+  max-width: 1400px;
   margin: 0 auto;
 }
-.goal-card, .history-card {
+.history-card {
   margin-top: 20px;
 }
 .act-link {

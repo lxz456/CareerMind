@@ -13,7 +13,6 @@ import re
 from collections import Counter
 from collections.abc import AsyncIterator
 
-from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
@@ -80,7 +79,6 @@ async def initialize_session_node(state: InterviewState) -> dict:
     return {
         "questions": questions,
         "current_index": 0,
-        "answered_count": 0,
         "follow_up_count": 0,
         "max_follow_ups_per_question": 1,
         "status": "initializing",
@@ -109,7 +107,7 @@ async def prepare_question_node(state: InterviewState) -> dict:
 
 
 async def ask_question_node(state: InterviewState) -> dict:
-    """通知前端当前题目已准备好，并记录 AI 题目消息。
+    """通知前端当前题目已准备好。
 
     同时支持基础题和追问，通过 `is_follow_up` 选择不同前端提示文案，
     完成后进入 `wait_for_answer`。
@@ -119,10 +117,7 @@ async def ask_question_node(state: InterviewState) -> dict:
         "type": "question_ready",
         "message": "追问题目已生成" if state["is_follow_up"] else "下一题已准备好",
     })
-    return {
-        "messages": [AIMessage(content=question["question"])],
-        "status": "waiting_answer",
-    }
+    return {"status": "waiting_answer"}
 
 
 async def wait_for_answer_node(state: InterviewState) -> dict:
@@ -130,7 +125,7 @@ async def wait_for_answer_node(state: InterviewState) -> dict:
 
     `interrupt()` 会把题目信息返回给调用端，并通过 SQLite checkpointer 保存中断点。
     后续用 `Command(resume={"answer": ...})` 恢复时，会从中断位置继续，
-    校验回答非空后写入 `pending_answer` 和用户消息。
+    校验回答非空后写入供评价节点消费的 `pending_answer`。
     """
     payload = interrupt({
         "type": "interview_question",
@@ -146,7 +141,6 @@ async def wait_for_answer_node(state: InterviewState) -> dict:
     get_stream_writer()({"type": "answer_received", "message": "已收到你的回答"})
     return {
         "pending_answer": answer,
-        "messages": [HumanMessage(content=answer)],
         "status": "evaluating",
     }
 
@@ -156,7 +150,8 @@ async def evaluate_answer_node(state: InterviewState) -> dict:
 
     评估包含分数、优点、改进点、参考回答和评语，并在本题仍可追问时让同一次
     模型响应附带候选追问。节点还会补充题目 ID、基础题序号、追问关系和难度；
-    `answers`/`feedbacks` 通过 reducer 追加，最后清空 `pending_answer`。
+    `feedbacks` 通过 reducer 追加；其中已经包含题目和回答，最后清空
+    `pending_answer`，不再维护重复的 answers/messages 状态。
     """
     question = state["current_question"]
     answer = state["pending_answer"] or ""
@@ -191,14 +186,7 @@ async def evaluate_answer_node(state: InterviewState) -> dict:
         "score": evaluation.get("score", 0),
     })
     return {
-        "answers": [{
-            "question_id": question["question_id"],
-            "question": question["question"],
-            "answer": answer,
-            "is_follow_up": state["is_follow_up"],
-        }],
         "feedbacks": [feedback],
-        "answered_count": state["answered_count"] + 1,
         "pending_answer": None,
         "suggested_follow_up": suggested_follow_up or None,
     }
@@ -442,7 +430,6 @@ async def get_interview_state(session_id: str) -> dict | None:
 
 async def start_interview_graph(
     *,
-    user_id: str,
     session_id: str,
     interview_type: str,
     target_position: str,
@@ -456,7 +443,6 @@ async def start_interview_graph(
     LangGraph 运行配置和首次调用。成功后返回 checkpoint 中的最新完整状态。
     """
     initial_state = create_interview_state(
-        user_id=user_id,
         session_id=session_id,
         interview_type=interview_type,
         target_position=target_position,

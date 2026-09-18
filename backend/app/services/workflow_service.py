@@ -25,17 +25,10 @@ from app.schemas.workflow import (
 )
 
 
-STEP_PROGRESS = {
-    "parallel_analysis": 0,
-    "resume_analysis": 20,
-    "job_search": 20,
-    "skill_gap": 60,
-    "career_plan": 85,
-    "summary": 100,
-}
 # 按 run_id 保存当前 Python 进程内仍在运行的路径 A 后台任务。
 # 除了防止任务对象被提前回收，也用于阻止同一规划被重复调度。
 _pipeline_tasks: dict[str, asyncio.Task] = {}
+_deleting_runs: set[str] = set()
 logger = logging.getLogger(__name__)
 
 
@@ -89,6 +82,10 @@ def _track_pipeline(run_id: str, coroutine) -> tuple[asyncio.Task, bool]:
     如果同一 run_id 已有未结束任务，则关闭新建的协程并返回现有任务，避免重复执行。
     返回值第二项表示本次是否真的创建了新任务。
     """
+    if run_id in _deleting_runs:
+        coroutine.close()
+        raise RuntimeError("Career planning deletion is in progress")
+
     existing = _pipeline_tasks.get(run_id)
     if existing and not existing.done():
         coroutine.close()
@@ -103,6 +100,23 @@ def _track_pipeline(run_id: str, coroutine) -> tuple[asyncio.Task, bool]:
 
     task.add_done_callback(forget_pipeline)
     return task, True
+
+
+async def _cancel_pipeline(run_id: str) -> bool:
+    """取消并等待一个仍在运行的路径 A 后台任务。"""
+    task = _pipeline_tasks.pop(run_id, None)
+    if task is None or task.done():
+        return False
+
+    task.cancel()
+    result = (await asyncio.gather(task, return_exceptions=True))[0]
+    if not isinstance(result, asyncio.CancelledError):
+        logger.warning(
+            "Career planning task ended while being cancelled run_id=%s result=%r",
+            run_id,
+            result,
+        )
+    return True
 
 
 class WorkflowService:
@@ -152,7 +166,6 @@ class WorkflowService:
             completed_steps=[],
             input_data={
                 "target_position": data.target_position,
-                "job_requirements": data.job_requirements,
                 "target_location": data.target_location,
                 "resume_id": data.resume_id,
                 # Direct-text requests need their original input if the process
@@ -174,7 +187,6 @@ class WorkflowService:
                 user_id=user_id,
                 resume_text=resume_text,
                 target_position=data.target_position,
-                job_requirements=data.job_requirements or "",
                 target_location=data.target_location or "",
                 resume_id=data.resume_id or "",
                 thread_id=thread_id,
@@ -204,7 +216,6 @@ class WorkflowService:
         resume_id: str,
         thread_id: str,
         run_id: str,
-        job_requirements: str = "",
         target_location: str = "",
         resume_from_checkpoint: bool = False,
     ) -> None:
@@ -228,9 +239,7 @@ class WorkflowService:
                     user_id=user_id,
                     resume_text=resume_text,
                     target_position=target_position,
-                    job_requirements=job_requirements,
                     target_location=target_location,
-                    resume_id=resume_id,
                     thread_id=thread_id,
                     resume_from_checkpoint=resume_from_checkpoint,
                     on_step=WorkflowService._make_progress_writer(run_id),
@@ -270,6 +279,15 @@ class WorkflowService:
                         run.error_message = None
                         logger.info("Career planning completed run_id=%s", run_id)
                     run.completed_at = now
+            except asyncio.CancelledError:
+                # 删除历史或应用关闭时不允许提交正在生成的半成品结果。
+                await session.rollback()
+                logger.info(
+                    "Career planning cancelled run_id=%s thread_id=%s",
+                    run_id,
+                    thread_id,
+                )
+                raise
             except Exception as e:
                 logger.exception("Career planning crashed run_id=%s thread_id=%s", run_id, thread_id)
                 # 后续节点异常时，checkpoint 中可能已有成功的简历分析，需要单独保留下来。
@@ -288,8 +306,7 @@ class WorkflowService:
                     run.error_message = _workflow_error_message(
                         run.error_code, run.current_step
                     )
-            finally:
-                await session.commit()
+            await session.commit()
 
     @staticmethod
     async def _persist_resume_analysis(
@@ -348,6 +365,9 @@ class WorkflowService:
         有 checkpoint 时从最近状态继续；首个 checkpoint 尚未产生时，使用保存的
         resume_text 或 Resume 记录从头执行。同一进程内对相同 run_id 重复调用是幂等的。
         """
+        if run_id in _deleting_runs:
+            raise HTTPException(status_code=409, detail="Workflow deletion is in progress")
+
         run = await WorkflowRepo.get_plan_by_id_and_user(db, run_id, user_id)
         if not run:
             raise HTTPException(status_code=404, detail="Workflow run not found")
@@ -394,7 +414,6 @@ class WorkflowService:
                 user_id=run.user_id,
                 resume_text=resume_text,
                 target_position=input_data.get("target_position") or "",
-                job_requirements=input_data.get("job_requirements") or "",
                 target_location=input_data.get("target_location") or "",
                 resume_id=resume_id,
                 thread_id=thread_id,
@@ -554,16 +573,57 @@ class WorkflowService:
         user_id: str,
         run_id: str,
     ) -> None:
-        """删除当前用户的一条职业规划及其 LangGraph checkpoint。
+        """安全删除职业规划、后台任务和对应 LangGraph checkpoint。
 
-        先通过用户 ID 和工作流类型校验所有权，再删除 `workflow_runs` 业务记录；如果该
-        记录有关联 `thread_id`，同时清理 SQLite checkpointer，避免遗留孤立运行状态。
+        删除前先取消并等待当前进程内的后台任务，确保它不会在删除后继续调用外部服务
+        或回写进度。业务记录和 checkpoint 任一删除失败时回滚业务事务；若任务已被
+        取消，则把保留下来的记录标记为 interrupted，供用户重试删除或继续执行。
         """
         run = await WorkflowRepo.get_plan_by_id_and_user(db, run_id, user_id)
         if not run:
             raise HTTPException(status_code=404, detail="Workflow run not found")
 
         thread_id = run.thread_id
-        await WorkflowRepo.delete(db, run)
-        if thread_id:
-            await delete_checkpoint(thread_id)
+        was_active = run.status in {"pending", "running"}
+        _deleting_runs.add(run_id)
+        try:
+            task_cancelled = await _cancel_pipeline(run_id)
+            try:
+                await WorkflowRepo.delete(db, run)
+                if thread_id:
+                    await delete_checkpoint(thread_id)
+                # 在 Service 内提交，确保两个存储清理完成后再向 API 返回 204。
+                await db.commit()
+            except Exception as exc:
+                await db.rollback()
+                if task_cancelled or was_active:
+                    try:
+                        surviving_run = await WorkflowRepo.get_plan_by_id_and_user(
+                            db, run_id, user_id
+                        )
+                        if surviving_run:
+                            surviving_run.status = "interrupted"
+                            surviving_run.error_code = None
+                            surviving_run.error_message = None
+                            surviving_run.completed_at = None
+                            await db.commit()
+                    except Exception:
+                        await db.rollback()
+                        logger.exception(
+                            "Failed to compensate career plan deletion run_id=%s",
+                            run_id,
+                        )
+                logger.exception("Career plan deletion failed run_id=%s", run_id)
+                raise HTTPException(
+                    status_code=503,
+                    detail="职业规划删除失败，已停止运行，请稍后重试",
+                ) from exc
+
+            logger.info(
+                "Career plan deleted run_id=%s thread_id=%s task_cancelled=%s",
+                run_id,
+                thread_id,
+                task_cancelled,
+            )
+        finally:
+            _deleting_runs.discard(run_id)

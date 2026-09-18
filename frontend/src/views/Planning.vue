@@ -30,14 +30,6 @@
           <el-form-item label="目标职位" required>
             <el-input v-model="targetPosition" placeholder="必填，如：Java开发工程师 / Java Developer" clearable maxlength="100" />
           </el-form-item>
-          <el-form-item label="工作要求">
-            <el-select v-model="jobRequirements" placeholder="选填" clearable style="width: 100%">
-              <el-option label="3 年以下工作经验" value="under_3_years_experience" />
-              <el-option label="3 年以上工作经验" value="more_than_3_years_experience" />
-              <el-option label="无需工作经验" value="no_experience" />
-              <el-option label="无学历要求" value="no_degree" />
-            </el-select>
-          </el-form-item>
           <el-form-item label="求职地区">
             <el-select v-model="targetLocation" placeholder="选填" clearable style="width: 100%">
               <el-option label="美国" value="us" />
@@ -68,7 +60,7 @@
         <p class="sub">{{ currentStepText }}</p>
         <el-button v-if="failed" type="danger" plain @click="reset">重新开始</el-button>
         <el-button v-else-if="interrupted" type="primary" plain @click="router.push('/profile')">
-          前往个人中心继续
+          前往历史记录继续
         </el-button>
       </el-card>
     </div>
@@ -147,7 +139,6 @@ const step = ref(1)
 const fileList = ref([])
 const selectedFile = ref(null)
 const targetPosition = ref('')
-const jobRequirements = ref('')
 const targetLocation = ref('')
 const starting = ref(false)
 const runId = ref('')
@@ -174,7 +165,7 @@ const statusText = computed(() => {
 })
 const currentStepText = computed(() => {
   if (failed.value) return '请检查后端配置后重试'
-  if (interrupted.value) return '后端曾重启，请在个人中心点击“继续”后恢复'
+  if (interrupted.value) return '后端曾重启，请在历史记录中点击“继续”后恢复'
   return currentStepName.value ? `当前：${currentStepName.value}` : '准备中...'
 })
 
@@ -207,7 +198,6 @@ async function startAnalysis() {
     const wf = await startCareerPlanning({
       resume_id: resume.id,
       target_position: normalizedTargetPosition,
-      job_requirements: jobRequirements.value || null,
       target_location: targetLocation.value || null,
     })
     runId.value = wf.run_id
@@ -275,7 +265,7 @@ async function restoreRequestedPlanning() {
     ? route.query.run_id
     : ''
 
-  // 普通 /planning 始终是新建页面。只有个人中心携带 run_id 时才查看已有任务。
+  // 普通 /planning 始终是新建页面。只有历史记录页携带 run_id 时才查看已有任务。
   if (!requestedRunId) {
     resetState()
     return
@@ -304,7 +294,6 @@ function resetState() {
   fileList.value = []
   selectedFile.value = null
   targetPosition.value = ''
-  jobRequirements.value = ''
   targetLocation.value = ''
   currentStepName.value = ''
   clearTimeout(timer)
